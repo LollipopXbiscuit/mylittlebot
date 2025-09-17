@@ -1,12 +1,16 @@
 import random
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
+import os
+TOKEN = os.environ.get("BOT_TOKEN")  # keep this at the top before initializing
+
 application = Application.builder().token(TOKEN).build()
 
-# add your handlers
 application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("marry", marry))
+application.add_handler(CommandHandler("summon", summon))
+# add any other handlers you have
 
-# run the bot
 application.run_polling()
 import os
 
