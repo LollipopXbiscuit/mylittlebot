@@ -2,7 +2,7 @@ import random
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
 import os
-TOKEN = os.environ.get("7814983224:AAE3J1yPGVHS6n49Cz_RiZ5_6bAMHAhKPDc")  # keep this at the top before initializing
+TOKEN = os.environ.get("BOT_TOKEN")  # keep this at the top before initializing
 
 application = Application.builder().token(TOKEN).build()
 
