@@ -1,6 +1,13 @@
 import random
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
+application = Application.builder().token(TOKEN).build()
+
+# add your handlers
+application.add_handler(CommandHandler("start", start))
+
+# run the bot
+application.run_polling()
 import os
 
 message_count = {}  # Tracks messages per chat
