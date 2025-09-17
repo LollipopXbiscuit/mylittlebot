@@ -1,30 +1,24 @@
 import random
-from telegram import Update, BotCommand
-from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
+import re
 import os
-TOKEN = os.environ.get("BOT_TOKEN")  # keep this at the top before initializing
-
-application = Application.builder().token(TOKEN).build()
-
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("marry", marry))
-application.add_handler(CommandHandler("summon", summon))
-# add any other handlers you have
-
-application.run_polling()
-import os
+from telegram import Update, BotCommand, InlineQueryResultPhoto
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackContext,
+    MessageHandler,
+    InlineQueryHandler,
+    filters,
+)
 
 message_count = {}  # Tracks messages per chat
 
 # Extract owner ID from environment variable (handle extra text)
 owner_id_str = os.environ.get("OWNER_ID", "0")
-# Extract just the numbers from the string
-import re
 owner_id_match = re.search(r'\d+', owner_id_str)
 OWNER_ID = int(owner_id_match.group()) if owner_id_match else 0
 
 # --- Global Variables ---
-
 rarities = {
     "Common": 0.8,
     "Uncommon": 0.7,
@@ -88,11 +82,9 @@ characters = {
 # Track last summoned characters per user (temporary storage)
 last_summons = {}
 user_collections = {}
-# Store user favorites
 favorites = {}
 
 # --- Bot Functions ---
-
 async def start(update: Update, context: CallbackContext):
     if update.message:
         await update.message.reply_text(
@@ -105,7 +97,6 @@ async def start(update: Update, context: CallbackContext):
             "/setfav - Set your last summoned character as favorite"
         )
 
-# --- Helper Function ---
 def choose_rarity():
     return random.choices(
         population=list(rarities.keys()),
@@ -113,18 +104,12 @@ def choose_rarity():
         k=1
     )[0]
 
-
-# --- Summon Command ---
 async def summon(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
 
     user_id = update.effective_user.id
 
-    # Debug logging (optional)
-    print(f"DEBUG: User ID: {user_id}, Owner ID: {OWNER_ID}")
-
-    # Check if user is the bot owner
     if user_id != OWNER_ID:
         await update.message.reply_text(
             f"🚫 Only the bot owner can manually summon characters!\n"
@@ -132,16 +117,13 @@ async def summon(update: Update, context: CallbackContext):
         )
         return
 
-    # Pick rarity using proper weighted logic
     rarity = choose_rarity()
 
-    # Make sure we actually have characters in that rarity
     if rarity in characters and characters[rarity]:
         character = random.choice(characters[rarity])
         style = rarity_styles.get(rarity, "")
         caption = f"{style} A beauty has been summoned! Use /marry to add them to your harem!"
 
-        # Save summon info for this user
         last_summons[user_id] = {
             "name": character["name"],
             "rarity": rarity,
@@ -149,13 +131,10 @@ async def summon(update: Update, context: CallbackContext):
             "style": style
         }
 
-        # Send character photo
-        await update.message.reply_photo(
-            character["url"],
-            caption=caption
-        )
+        await update.message.reply_photo(character["url"], caption=caption)
     else:
         await update.message.reply_text("⚠️ No characters found for this rarity yet.")
+
 async def marry(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
@@ -163,49 +142,35 @@ async def marry(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
-    # Look up the last summon in this chat
     if chat_id in last_summons:
         summon_info = last_summons[chat_id]
-
-        # Initialize user collection if not exists
         if user_id not in user_collections:
             user_collections[user_id] = []
-
-        # Add character to this user's collection
         user_collections[user_id].append(summon_info)
-
-        # Remove summon from chat so others can't claim it again
         del last_summons[chat_id]
-
         await update.message.reply_text(
             f"✅ You married {summon_info['style']} {summon_info['name']} ({summon_info['rarity']})!\n\n"
             f"Total characters in your collection: {len(user_collections[user_id])}"
         )
     else:
-        await update.message.reply_text("❌ No summon available right now. Wait for one to appear or use /spawn if you're the owner.") 
+        await update.message.reply_text("❌ No summon available right now.")
+
 async def collection(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
-        
+
     user_id = update.effective_user.id
-    
     if user_id not in user_collections or not user_collections[user_id]:
         await update.message.reply_text("📦 Your collection is empty! Use /summon to find characters.")
         return
-    
+
     collection_text = "🎴 Your Collection:\n\n"
-    
-    # Group by rarity
     rarity_counts = {}
     for char in user_collections[user_id]:
         rarity = char['rarity']
-        if rarity not in rarity_counts:
-            rarity_counts[rarity] = []
-        rarity_counts[rarity].append(char['name'])
-    
-    # Display by rarity (highest to lowest)
+        rarity_counts.setdefault(rarity, []).append(char['name'])
+
     rarity_order = ["Limited Edition", "Arcane", "Celestial", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common"]
-    
     for rarity in rarity_order:
         if rarity in rarity_counts:
             style = rarity_styles.get(rarity, "")
@@ -213,39 +178,32 @@ async def collection(update: Update, context: CallbackContext):
             for name in rarity_counts[rarity]:
                 collection_text += f"  • {name}\n"
             collection_text += "\n"
-    
+
     collection_text += f"📊 Total: {len(user_collections[user_id])} characters"
-    
     await update.message.reply_text(collection_text)
 
 async def handle_message(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
-
-    # Increase message count for this chat
-    if chat_id not in message_count:
-        message_count[chat_id] = 0
-    message_count[chat_id] += 1
-
-    # Check if 100 messages reached
+    message_count[chat_id] = message_count.get(chat_id, 0) + 1
     if message_count[chat_id] >= 100:
-        message_count[chat_id] = 0  # reset counter
-        await summon(update, context)  # call your summon function
+        message_count[chat_id] = 0
+        await summon(update, context)
 
 async def fav(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
-        
+
     user_id = update.effective_user.id
     if user_id in favorites:
         fav_character = favorites[user_id]
         await update.message.reply_text(f"💖 Your favorite is {fav_character['name']} ({fav_character['rarity']})!")
-        # Show the favorite character image
         await update.message.reply_photo(fav_character['url'])
     else:
         await update.message.reply_text("You don't have a favorite yet. Use /setfav first!")
+
 async def inline_query(update: Update, context: CallbackContext):
     query = update.inline_query.query.strip()
-    offset = int(update.inline_query.offset or 0)  # page offset
+    offset = int(update.inline_query.offset or 0)
     page_size = 50
 
     all_characters = []
@@ -258,35 +216,29 @@ async def inline_query(update: Update, context: CallbackContext):
                 "style": rarity_styles.get(rarity, "")
             })
 
-    # Optional: search filter
     if query:
         all_characters = [c for c in all_characters if query.lower() in c["name"].lower()]
 
-    # Paginate
     page = all_characters[offset:offset + page_size]
-
-    results = []
-    for idx, chara in enumerate(page):
-        results.append(
-            InlineQueryResultPhoto(
-                id=str(offset + idx),
-                photo_url=chara["url"],
-                thumb_url=chara["url"],
-                title=f"{chara['name']} ({chara['rarity']})",
-                description=f"Rarity: {chara['rarity']}",
-                caption=f"{chara['style']} {chara['name']} ({chara['rarity']})"
-            )
+    results = [
+        InlineQueryResultPhoto(
+            id=str(offset + idx),
+            photo_url=chara["url"],
+            thumb_url=chara["url"],
+            title=f"{chara['name']} ({chara['rarity']})",
+            description=f"Rarity: {chara['rarity']}",
+            caption=f"{chara['style']} {chara['name']} ({chara['rarity']})"
         )
+        for idx, chara in enumerate(page)
+    ]
 
-    # Set next offset
     next_offset = str(offset + page_size) if len(all_characters) > offset + page_size else ""
-
     await update.inline_query.answer(results, cache_time=1, next_offset=next_offset)
-application.add_handler(InlineQueryHandler(inline_query))
+
 async def setfav(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
-        
+
     user_id = update.effective_user.id
     if user_id in last_summons:
         favorites[user_id] = last_summons[user_id]
@@ -295,7 +247,6 @@ async def setfav(update: Update, context: CallbackContext):
         await update.message.reply_text("You haven't summoned any character yet!")
 
 async def post_init(application):
-    """Set bot commands after application starts to make them visible in Telegram"""
     commands = [
         BotCommand("start", "Start the bot and get help"),
         BotCommand("summon", "Summon a random character (owner only)"),
@@ -304,28 +255,26 @@ async def post_init(application):
         BotCommand("fav", "View your favorite character"),
         BotCommand("setfav", "Set your last summoned character as favorite"),
     ]
-    
     await application.bot.set_my_commands(commands)
     print("🤖 Bot commands registered successfully")
 
-# --- Main Function ---
 def main():
-    # Get token from environment variable
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    
+    token = os.environ.get("BOT_TOKEN")
     if not token:
-        print("Error: TELEGRAM_BOT_TOKEN environment variable not set!")
+        print("Error: BOT_TOKEN environment variable not set!")
         return
-    
+
     application = Application.builder().token(token).build()
 
-    # Removed conflicting handlers - shivu system handles these commands
-    # application.add_handler(CommandHandler("summon", summon))  # Conflicts with shivu summon
-    # application.add_handler(CommandHandler("marry", marry))    # Conflicts with shivu marry/guess
-    # application.add_handler(CommandHandler("collection", collection))  # Conflicts with shivu harem
-    # application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # Conflicts with shivu message_counter
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("summon", summon))
+    application.add_handler(CommandHandler("marry", marry))
+    application.add_handler(CommandHandler("collection", collection))
+    application.add_handler(CommandHandler("fav", fav))
+    application.add_handler(CommandHandler("setfav", setfav))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(InlineQueryHandler(inline_query))
 
-    # Set up post-init callback to register bot commands for Telegram visibility
     application.post_init = post_init
 
     print("🤖 Summon Bot is starting...")
